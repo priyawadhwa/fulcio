@@ -17,6 +17,7 @@ limitations under the License.
 package api
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/x509"
@@ -25,6 +26,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-openapi/runtime/middleware"
@@ -76,6 +78,9 @@ func SigningCertHandler(params operations.SigningCertParams, principal *oidc.IDT
 	})
 	// Now issue cert!
 	req := fca.Req(emailAddress, publicKeyPEM)
+
+	ctx, cancel := context.WithDeadline(ctx, time.Now().Add(30*time.Second))
+	defer cancel()
 
 	resp, err := fca.Client().CreateCertificate(ctx, req)
 	if err != nil {
