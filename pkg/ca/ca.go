@@ -21,11 +21,13 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/sha256"
+	"encoding/asn1"
 	"errors"
 	"sync"
 
+	ctgox509 "github.com/google/certificate-transparency-go/x509"
 	"github.com/sigstore/fulcio/pkg/generated/models"
-	
+
 	privateca "cloud.google.com/go/security/privateca/apiv1beta1"
 	privatecapb "google.golang.org/genproto/googleapis/cloud/security/privateca/v1beta1"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -59,7 +61,7 @@ func CheckSignature(alg string, pub crypto.PublicKey, proof []byte, email string
 	return nil
 }
 
-func Req(parent, email string, pemBytes []byte) *privatecapb.CreateCertificateRequest {
+func ReqPrecert(parent, email string, pemBytes []byte) *privatecapb.CreateCertificateRequest {
 	// TODO, use the right fields :)
 	return &privatecapb.CreateCertificateRequest{
 		Parent: parent,
@@ -82,6 +84,10 @@ func Req(parent, email string, pemBytes []byte) *privatecapb.CreateCertificateRe
 										CodeSigning: true,
 									},
 								},
+								AdditionalExtensions: []*privatecapb.X509Extension{
+									// poison extension
+									getPoisonExtension(),
+								},
 							},
 						},
 					},
@@ -97,5 +103,22 @@ func Req(parent, email string, pemBytes []byte) *privatecapb.CreateCertificateRe
 				},
 			},
 		},
+	}
+}
+
+func getPoisonExtension() *privatecapb.X509Extension {
+	poison := ctgox509.OIDExtensionCTPoison
+	// poison is []int, convert to []int32
+	var pExt []int32
+	for _, p := range poison {
+		pExt = append(pExt, int32(p))
+	}
+
+	return &privatecapb.X509Extension{
+		ObjectId: &privatecapb.ObjectId{
+			ObjectIdPath: pExt,
+		},
+		Critical: true,
+		Value:    asn1.NullBytes,
 	}
 }

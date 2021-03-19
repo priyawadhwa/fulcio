@@ -22,11 +22,13 @@ import (
 	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
+
+	ctgox509 "github.com/google/certificate-transparency-go/x509"
+	"github.com/pkg/errors"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-openapi/runtime/middleware"
@@ -76,28 +78,60 @@ func SigningCertHandler(params operations.SigningCertParams, principal *oidc.IDT
 		Bytes: *publicKey.Content,
 		Type:  "PUBLIC KEY",
 	})
-	// Now issue cert!
 
 	ctx, _ = context.WithDeadline(ctx, time.Now().Add(20*time.Second))
-
 	parent := viper.GetString("gcp_private_ca_parent")
 
-	req := fca.Req(parent, emailAddress, publicKeyPEM)
-	log.Logger.Infof("requesting cert from %s for %s", parent, emailAddress)
+	// request a precertificate
+	req := fca.ReqPrecert(parent, emailAddress, publicKeyPEM)
+	log.Logger.Infof("requesting precert from %s for %s", parent, emailAddress)
 
 	resp, err := fca.Client().CreateCertificate(ctx, req)
 	if err != nil {
 		return handleFulcioAPIError(params, http.StatusInternalServerError, err, failedToCreateCert)
 	}
 
-	// Submit to CTL
-	log.Logger.Info("Submitting CTL inclusion for OIDC grant: ", emailAddress)
+	// make sure we have a precert here
+	pemCert := resp.GetPemCertificate()
+	derBytes, _ := pem.Decode([]byte(pemCert))
+
+	parsedPrecert, err := ctgox509.ParseCertificate(derBytes.Bytes)
+	if err != nil {
+		return handleFulcioAPIError(params, http.StatusInternalServerError, err, "~~~~~~~~~~~~~~ parsing certifcate :(")
+	}
+	if !parsedPrecert.IsPrecertificate() {
+		return handleFulcioAPIError(params, http.StatusInternalServerError, err, "~~~~~~~~~~~~~~ precert is not actually a precert")
+	}
+
+	// try to add the precert to the CT log and get an SCT back
+	log.Logger.Info("Submitting precert to CT log to get an SCT back")
 	ctURL := viper.GetString("ct-log-url")
 	c := ctl.New(ctURL)
+	sct, err := c.AddPreChain(ctx, resp.PemCertificate, resp.PemCertificateChain)
+	if err != nil {
+		return handleFulcioAPIError(params, http.StatusInternalServerError, err, "~~~~~~~~~~~~~~ adding precert to chain")
+	}
+
+	log.Logger.Info("CTL Precert Submission Signature Received: ", sct.Signature)
+	log.Logger.Info("CTL Precert Submission ID Received: ", sct.ID)
+
+	// remove poison from the cert, and add in the SCT
+	unpoisonedCert, err := ctgox509.RemoveCTPoison(derBytes.Bytes)
+	if err != nil {
+		return handleFulcioAPIError(params, http.StatusInternalServerError, err, "~~~~~~~~~~~~~~ unpoisoning cert")
+	}
+	log.Logger.Info("yay unpoisoned cert", string(unpoisonedCert))
+
+	// request a new certificate
+
+	// add the new certificate to the log
 	ct, err := c.AddChain(resp.PemCertificate, resp.PemCertificateChain)
 	if err != nil {
 		return handleFulcioAPIError(params, http.StatusInternalServerError, err, fmt.Sprintf(failedToEnterCertInCTL, ctURL))
 	}
+
+	log.Logger.Info("Submitting CTL inclusion for OIDC grant: ", emailAddress)
+
 	log.Logger.Info("CTL Submission Signature Received: ", ct.Signature)
 	log.Logger.Info("CTL Submission ID Received: ", ct.ID)
 
