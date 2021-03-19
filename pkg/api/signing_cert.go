@@ -116,13 +116,17 @@ func SigningCertHandler(params operations.SigningCertParams, principal *oidc.IDT
 	log.Logger.Info("CTL Precert Submission ID Received: ", sct.ID)
 
 	// remove poison from the cert, and add in the SCT
-	unpoisonedCert, err := ctgox509.RemoveCTPoison(derBytes.Bytes)
+	unpoisonedCert, err := ctgox509.RemoveCTPoison(parsedPrecert.RawTBSCertificate)
 	if err != nil {
 		return handleFulcioAPIError(params, http.StatusInternalServerError, err, "~~~~~~~~~~~~~~ unpoisoning cert")
 	}
-	log.Logger.Info("yay unpoisoned cert", string(unpoisonedCert))
 
 	// request a new certificate
+	req = fca.ReqCert(parent, emailAddress, publicKeyPEM)
+	resp, err = fca.Client().CreateCertificate(ctx, req)
+	if err != nil {
+		return handleFulcioAPIError(params, http.StatusInternalServerError, err, failedToCreateCert)
+	}
 
 	// add the new certificate to the log
 	ct, err := c.AddChain(resp.PemCertificate, resp.PemCertificateChain)

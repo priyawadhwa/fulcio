@@ -106,6 +106,46 @@ func ReqPrecert(parent, email string, pemBytes []byte) *privatecapb.CreateCertif
 	}
 }
 
+func ReqCert(parent, email string, publicKeyPemBytes []byte) *privatecapb.CreateCertificateRequest {
+	return &privatecapb.CreateCertificateRequest{
+		Parent: parent,
+		Certificate: &privatecapb.Certificate{
+			Lifetime: &durationpb.Duration{Seconds: 20 * 60},
+			CertificateConfig: &privatecapb.Certificate_Config{
+				Config: &privatecapb.CertificateConfig{
+					PublicKey: &privatecapb.PublicKey{
+						Type: privatecapb.PublicKey_PEM_EC_KEY,
+						Key:  publicKeyPemBytes,
+					},
+					ReusableConfig: &privatecapb.ReusableConfigWrapper{
+						ConfigValues: &privatecapb.ReusableConfigWrapper_ReusableConfigValues{
+							ReusableConfigValues: &privatecapb.ReusableConfigValues{
+								KeyUsage: &privatecapb.KeyUsage{
+									BaseKeyUsage: &privatecapb.KeyUsage_KeyUsageOptions{
+										DigitalSignature: true,
+									},
+									ExtendedKeyUsage: &privatecapb.KeyUsage_ExtendedKeyUsageOptions{
+										CodeSigning: true,
+									},
+								},
+							},
+						},
+					},
+					SubjectConfig: &privatecapb.CertificateConfig_SubjectConfig{
+						CommonName: email,
+						SubjectAltName: &privatecapb.SubjectAltNames{
+							EmailAddresses: []string{email},
+						},
+						Subject: &privatecapb.Subject{
+							Organization: email,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 func getPoisonExtension() *privatecapb.X509Extension {
 	poison := ctgox509.OIDExtensionCTPoison
 	// poison is []int, convert to []int32
