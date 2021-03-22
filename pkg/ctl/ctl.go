@@ -71,7 +71,7 @@ func (err *ErrorResponse) Error() string {
 	return fmt.Sprintf("%d (%s) CT API error: %s", err.StatusCode, err.ErrorCode, err.Message)
 }
 
-func (c *Client) AddPreChain(ctx context.Context, leaf string, chain []string) (*certChainResponse, error) {
+func (c *Client) AddPreChain(ctx context.Context, leaf string, chain []string) (*ct.SignedCertificateTimestamp, error) {
 	tclient, err := logclient.New(c.url, c.c, jsonclient.Options{})
 	if err != nil {
 		return nil, errors.Wrap(err, "getting client")
@@ -94,13 +94,7 @@ func (c *Client) AddPreChain(ctx context.Context, leaf string, chain []string) (
 	if err != nil {
 		return nil, errors.Wrap(err, "adding pre chain")
 	}
-	return &certChainResponse{
-		SctVersion: int(sct.SCTVersion),
-		ID:         string(sct.LogID.KeyID[:]),
-		Timestamp:  int64(sct.Timestamp),
-		Extensions: string(sct.Extensions),
-		Signature:  string(sct.Signature.Signature),
-	}, nil
+	return sct, nil
 }
 
 func (c *Client) AddChain(leaf string, chain []string) (*certChainResponse, error) {

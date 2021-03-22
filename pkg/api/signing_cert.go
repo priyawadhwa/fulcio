@@ -120,6 +120,7 @@ func SigningCertHandler(params operations.SigningCertParams, principal *oidc.IDT
 	if err != nil {
 		return handleFulcioAPIError(params, http.StatusInternalServerError, err, "~~~~~~~~~~~~~~ unpoisoning cert")
 	}
+	fmt.Println(string(unpoisonedCert))
 
 	// request a new certificate
 	req = fca.ReqCert(parent, emailAddress, publicKeyPEM)
