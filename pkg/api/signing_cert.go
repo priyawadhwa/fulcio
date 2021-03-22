@@ -27,7 +27,9 @@ import (
 	"strings"
 	"time"
 
+	ct "github.com/google/certificate-transparency-go"
 	ctgox509 "github.com/google/certificate-transparency-go/x509"
+	"github.com/google/certificate-transparency-go/x509util"
 	"github.com/pkg/errors"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -113,14 +115,27 @@ func SigningCertHandler(params operations.SigningCertParams, principal *oidc.IDT
 	}
 
 	log.Logger.Info("CTL Precert Submission Signature Received: ", sct.Signature)
-	log.Logger.Info("CTL Precert Submission ID Received: ", sct.ID)
+	log.Logger.Info("CTL Precert Submission ID Received: ", string(sct.LogID.KeyID[:]))
 
 	// remove poison from the cert, and add in the SCT
 	unpoisonedCert, err := ctgox509.RemoveCTPoison(parsedPrecert.RawTBSCertificate)
 	if err != nil {
 		return handleFulcioAPIError(params, http.StatusInternalServerError, err, "~~~~~~~~~~~~~~ unpoisoning cert")
 	}
-	fmt.Println(string(unpoisonedCert))
+
+	// embed SCT into the new certificate
+	cert, err := ctgox509.ParseCertificate(unpoisonedCert)
+	if err != nil {
+		return handleFulcioAPIError(params, http.StatusInternalServerError, err, "~~~~~~~~~~~~~~ parsing unpoisoned cert")
+	}
+	sctList, err := x509util.MarshalSCTsIntoSCTList([]*ct.SignedCertificateTimestamp{sct})
+	if err != nil {
+		return handleFulcioAPIError(params, http.StatusInternalServerError, err, "~~~~~~~~~~~~~~ marshaling sct's into sct list")
+	}
+	if sctList == nil {
+		return handleFulcioAPIError(params, http.StatusInternalServerError, err, "~~~~~~~~~~~~~~ sct list is nil")
+	}
+	cert.SCTList = *sctList
 
 	// request a new certificate
 	req = fca.ReqCert(parent, emailAddress, publicKeyPEM)
