@@ -28,6 +28,7 @@ import (
 
 	privatecapb "google.golang.org/genproto/googleapis/cloud/security/privateca/v1beta1"
 
+	"github.com/google/certificate-transparency-go/ctutil"
 	"github.com/google/certificate-transparency-go/x509"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -126,9 +127,15 @@ func issuePrecert(ctx context.Context, parent, emailAddress string, publicKeyPEM
 	}
 	// Submit the precert to CTL
 	log.Logger.Info("Submitting CTL inclusion for OIDC grant: ", emailAddress)
-	sct, err := submitCertToCTL(resp, ct.AddPreChainPath)
+	// sct, err := submitCertToCTL(resp, ct.AddPreChainPath)
+	// if err != nil {
+	// 	return nil, errors.Wrap(err, "submitting precert to CTL")
+	// }
+	ctURL := viper.GetString("ct-log-url")
+	c := ctl.New(ctURL)
+	sct, err := c.TryPre(ctx, resp.GetPemCertificate(), resp.GetPemCertificateChain())
 	if err != nil {
-		return nil, errors.Wrap(err, "submitting precert to CTL")
+		return nil, errors.Wrap(err, "adding precert to CTL")
 	}
 	metricNewEntries.Inc()
 	return sct, nil
@@ -150,13 +157,19 @@ func issueCert(ctx context.Context, sct *ct.SignedCertificateTimestamp, parent, 
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing cert")
 	}
-	if cert.IsPrecertificate() {
-		return nil, errors.Wrap(err, "still have precert")
+	if exists, err := ctutil.ContainsSCT(cert, sct); err != nil || !exists {
+		return nil, errors.Wrapf(err, "issued cert doesn't contain SCT of precert: %v", err)
 	}
+	log.Logger.Info("Successfully issued cert containing SCT from precert")
 	// Submit the precert to CTL
 	log.Logger.Info("Submitting CTL inclusion for OIDC grant: ", emailAddress)
-	if _, err := submitCertToCTL(resp, ct.AddChainPath); err != nil {
-		return nil, errors.Wrap(err, "submitting precert to CTL")
+	// if _, err := submitCertToCTL(resp, ct.AddChainPath); err != nil {
+	// 	return nil, errors.Wrap(err, "submitting cert to CTL")
+	// }
+	ctURL := viper.GetString("ct-log-url")
+	c := ctl.New(ctURL)
+	if _, err := c.TryAdd(ctx, resp.GetPemCertificate(), resp.GetPemCertificateChain(), sct); err != nil {
+		return nil, errors.Wrap(err, "submitting cert to CTL")
 	}
 	metricNewEntries.Inc()
 	return resp, nil

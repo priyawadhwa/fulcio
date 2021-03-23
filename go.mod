@@ -15,6 +15,7 @@ require (
 	github.com/go-openapi/swag v0.19.14
 	github.com/go-openapi/validate v0.20.2
 	github.com/google/certificate-transparency-go v1.1.1 // indirect
+	github.com/google/go-cmp v0.5.5 // indirect
 	github.com/letsencrypt/boulder v0.0.0-20210320004905-cdce9f0f2f0d // indirect
 	github.com/magiconair/properties v1.8.4 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
