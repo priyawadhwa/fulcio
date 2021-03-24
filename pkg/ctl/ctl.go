@@ -26,6 +26,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	ct "github.com/google/certificate-transparency-go"
 	logclient "github.com/google/certificate-transparency-go/client"
 	"github.com/google/certificate-transparency-go/ctutil"
@@ -90,10 +92,19 @@ func (c *Client) TryPre(ctx context.Context, leaf string, chain []string) (*ct.S
 	if err := ctutil.VerifySCT(pk, parsedChain, sct, false); err != nil {
 		return nil, errors.Wrap(err, "Verifying SCT")
 	}
+
+	precert := parsedChain[0]
+	fmt.Println(len(precert.Extensions), len(precert.ExtraExtensions))
+
+	// try to build TBS cert
+	if _, err := ctx509.RemoveCTPoison(parsedChain[0].RawTBSCertificate); err != nil {
+		return nil, errors.Wrap(err, "removing ct poison")
+	}
+
 	return sct, nil
 }
 
-func (c *Client) TryAdd(ctx context.Context, leaf string, chain []string, wantSCT *ct.SignedCertificateTimestamp) (*ct.SignedCertificateTimestamp, error) {
+func (c *Client) TryAdd(ctx context.Context, leaf string, chain []string, wantSCT *ct.SignedCertificateTimestamp, precert *x509.Certificate) (*ct.SignedCertificateTimestamp, error) {
 	// Build the PEM Chain {root, client}
 	tclient, err := logclient.New(c.url, c.c, jsonclient.Options{})
 	if err != nil {
@@ -116,9 +127,34 @@ func (c *Client) TryAdd(ctx context.Context, leaf string, chain []string, wantSC
 	if err != nil {
 		return nil, errors.Wrap(err, "certs from code chain")
 	}
+
+	// get the extensions, minus poison extensio, from precert
+	tbsCert, err := x509.RemoveCTPoison(precert.RawTBSCertificate)
+	if err != nil {
+		return nil, err
+	}
+	// compare the actual precert with the one we will generate
+	pc, err := x509.ParseTBSCertificate(tbsCert)
+	if err != nil {
+		return nil, err
+	}
+	merkleLeaf, err := ct.MerkleTreeLeafForEmbeddedSCT(parsedChain, wantSCT.Timestamp)
+	if err != nil {
+		return nil, errors.Wrap(err, "getting leaf")
+	}
+	generatedPrecert, err := merkleLeaf.Precertificate()
+	if err != nil {
+		return nil, errors.Wrap(err, "merkle precert")
+	}
+	if d := cmp.Diff(pc, generatedPrecert); d != "" {
+		fmt.Println(d)
+		return nil, errors.New("precert and generated precert from cert are different")
+	}
+
 	if err := ctutil.VerifySCT(pk, parsedChain, wantSCT, true); err != nil {
 		return nil, errors.Wrap(err, "Verifying SCT")
 	}
+	fmt.Println("succesfully verified SCT?")
 	return sct, nil
 }
 

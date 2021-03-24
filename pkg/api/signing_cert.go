@@ -86,12 +86,12 @@ func SigningCertHandler(params operations.SigningCertParams, principal *oidc.IDT
 	parent := viper.GetString("gcp_private_ca_parent")
 
 	// Now issue precert!
-	sct, err := issuePrecert(ctx, parent, emailAddress, publicKeyPEM)
+	sct, precert, err := issuePrecert(ctx, parent, emailAddress, publicKeyPEM)
 	if err != nil {
 		return handleFulcioAPIError(params, http.StatusInternalServerError, err, failedToCreatePrecert)
 	}
 	log.Logger.Info("Successfully issued precert")
-	resp, err := issueCert(ctx, sct, parent, emailAddress, publicKeyPEM)
+	resp, err := issueCert(ctx, sct, precert, parent, emailAddress, publicKeyPEM)
 	if err != nil {
 		return handleFulcioAPIError(params, http.StatusInternalServerError, err, failedToCreateCert)
 	}
@@ -107,23 +107,23 @@ func SigningCertHandler(params operations.SigningCertParams, principal *oidc.IDT
 	return operations.NewSigningCertCreated().WithPayload(strings.TrimSpace(ret.String()))
 }
 
-func issuePrecert(ctx context.Context, parent, emailAddress string, publicKeyPEM []byte) (*ct.SignedCertificateTimestamp, error) {
+func issuePrecert(ctx context.Context, parent, emailAddress string, publicKeyPEM []byte) (*ct.SignedCertificateTimestamp, *x509.Certificate, error) {
 	extensions := fca.PoisonExtension()
 	precertReq := fca.Req(parent, emailAddress, publicKeyPEM, extensions)
 	log.Logger.Infof("requesting precert from %s for %s", parent, emailAddress)
 
 	resp, err := fca.Client().CreateCertificate(ctx, precertReq)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating precert")
+		return nil, nil, errors.Wrap(err, "creating precert")
 	}
 
 	derBytes, _ := pem.Decode([]byte(resp.GetPemCertificate()))
 	precert, err := x509.ParseCertificate(derBytes.Bytes)
 	if err != nil {
-		return nil, errors.Wrap(err, "parsing precert")
+		return nil, nil, errors.Wrap(err, "parsing precert")
 	}
 	if !precert.IsPrecertificate() {
-		return nil, errors.Wrap(err, "precert is not valid")
+		return nil, nil, errors.Wrap(err, "precert is not valid")
 	}
 	// Submit the precert to CTL
 	log.Logger.Info("Submitting CTL inclusion for OIDC grant: ", emailAddress)
@@ -135,13 +135,13 @@ func issuePrecert(ctx context.Context, parent, emailAddress string, publicKeyPEM
 	c := ctl.New(ctURL)
 	sct, err := c.TryPre(ctx, resp.GetPemCertificate(), resp.GetPemCertificateChain())
 	if err != nil {
-		return nil, errors.Wrap(err, "adding precert to CTL")
+		return nil, nil, errors.Wrap(err, "adding precert to CTL")
 	}
 	metricNewEntries.Inc()
-	return sct, nil
+	return sct, precert, nil
 }
 
-func issueCert(ctx context.Context, sct *ct.SignedCertificateTimestamp, parent, emailAddress string, publicKeyPEM []byte) (*privatecapb.Certificate, error) {
+func issueCert(ctx context.Context, sct *ct.SignedCertificateTimestamp, precert *x509.Certificate, parent, emailAddress string, publicKeyPEM []byte) (*privatecapb.Certificate, error) {
 	extensions, err := fca.SCTListExtensions([]ct.SignedCertificateTimestamp{*sct})
 	if err != nil {
 		return nil, errors.Wrap(err, "SCT list extensions")
@@ -166,9 +166,10 @@ func issueCert(ctx context.Context, sct *ct.SignedCertificateTimestamp, parent, 
 	// if _, err := submitCertToCTL(resp, ct.AddChainPath); err != nil {
 	// 	return nil, errors.Wrap(err, "submitting cert to CTL")
 	// }
+
 	ctURL := viper.GetString("ct-log-url")
 	c := ctl.New(ctURL)
-	if _, err := c.TryAdd(ctx, resp.GetPemCertificate(), resp.GetPemCertificateChain(), sct); err != nil {
+	if _, err := c.TryAdd(ctx, resp.GetPemCertificate(), resp.GetPemCertificateChain(), sct, precert); err != nil {
 		return nil, errors.Wrap(err, "submitting cert to CTL")
 	}
 	metricNewEntries.Inc()
