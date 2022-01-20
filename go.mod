@@ -19,7 +19,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/mitchellh/mapstructure v1.4.1
 	github.com/pelletier/go-toml v1.8.1 // indirect
-	github.com/prometheus/client_golang v1.10.0
+	github.com/prometheus/client_golang v1.12.0
 	github.com/rs/cors v1.7.0
 	github.com/segmentio/ksuid v1.0.3
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
@@ -33,8 +33,8 @@ require (
 	github.com/tidwall/pretty v1.0.2 // indirect
 	go.uber.org/zap v1.16.0
 	golang.org/x/crypto v0.0.0-20201124201722-c8d3bf9c5392 // indirect
-	golang.org/x/net v0.0.0-20210316092652-d523dce5a7f4
-	golang.org/x/oauth2 v0.0.0-20210313182246-cd4f82c27b84
+	golang.org/x/net v0.0.0-20210525063256-abc453219eb5
+	golang.org/x/oauth2 v0.0.0-20210514164344-f6687ab2804c
 	google.golang.org/genproto v0.0.0-20210402141018-6c239bbf2bb1
 	google.golang.org/protobuf v1.26.0
 	gopkg.in/ini.v1 v1.62.0 // indirect
