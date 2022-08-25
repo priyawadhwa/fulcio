@@ -19,13 +19,13 @@ require (
 	github.com/sigstore/sigstore v1.1.1-0.20220124143820-3cebf5c58675
 	github.com/spf13/cobra v1.3.0
 	github.com/spf13/viper v1.10.1
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.8.0
 	go.step.sm/crypto v0.15.0
 	go.uber.org/multierr v1.7.0 // indirect
-	go.uber.org/zap v1.20.0
+	go.uber.org/zap v1.23.0
 	google.golang.org/api v0.65.0
 	google.golang.org/genproto v0.0.0-20220107163113-42d7afdf6368
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/square/go-jose.v2 v2.6.0
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+	gopkg.in/yaml.v3 v3.0.1
 )
