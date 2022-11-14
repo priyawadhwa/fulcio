@@ -44,7 +44,7 @@ jobs:
       - name: deps
         run: sudo apt-get update && sudo apt-get install -yq libpcsclite-dev
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@5c56cd6c9dc07901af25baab6f2b0d9f3b7c3018 #v2.5.2
+        uses: golangci/golangci-lint-action@0ad9a0988b3973e851ab0a07adf248ec2e100376 #v3.3.1
         timeout-minutes: 5
         with:
           # Required: the version of golangci-lint is required and must be specified without patch version: we always use the latest patch version.
