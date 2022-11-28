@@ -25,10 +25,13 @@ import (
 	"strings"
 	"time"
 
+	"chainguard.dev/go-grpc-kit/pkg/duplex"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
 	ctclient "github.com/google/certificate-transparency-go/client"
 	"github.com/google/certificate-transparency-go/jsonclient"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	certauth "github.com/sigstore/fulcio/pkg/ca"
 	"github.com/sigstore/fulcio/pkg/ca/ephemeralca"
 	"github.com/sigstore/fulcio/pkg/ca/fileca"
@@ -37,7 +40,10 @@ import (
 	"github.com/sigstore/fulcio/pkg/ca/pkcs11ca"
 	"github.com/sigstore/fulcio/pkg/ca/tinkca"
 	"github.com/sigstore/fulcio/pkg/config"
+	"github.com/sigstore/fulcio/pkg/generated/protobuf"
+	"github.com/sigstore/fulcio/pkg/generated/protobuf/legacy"
 	"github.com/sigstore/fulcio/pkg/log"
+	"github.com/sigstore/fulcio/pkg/server"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -186,6 +192,7 @@ func runServeCmd(cmd *cobra.Command, args []string) {
 	if err != nil {
 		log.Logger.Fatalf("error loading --config-path=%s: %v", cp, err)
 	}
+	fmt.Println(cfg)
 
 	var baseca certauth.CertificateAuthority
 	switch viper.GetString("ca") {
@@ -240,33 +247,38 @@ func runServeCmd(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	httpServerEndpoint := fmt.Sprintf("%v:%v", viper.GetString("http-host"), viper.GetString("http-port"))
+	// logger, opts := log.SetupGRPCLogging()
 
-	reg := prometheus.NewRegistry()
+	d := duplex.New(
+		8080,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		runtime.WithMetadata(extractOIDCTokenFromAuthHeader),
+	)
 
-	grpcServer, err := createGRPCServer(cfg, ctClient, baseca)
+	ctx := context.Background()
+	grpcCAServer := server.NewGRPCCAServer(ctClient, baseca)
 	if err != nil {
 		log.Logger.Fatal(err)
 	}
-	grpcServer.setupPrometheus(reg)
-	grpcServer.startTCPListener()
+	protobuf.RegisterCAServer(d.Server, grpcCAServer)
+	if err := d.RegisterHandler(ctx, protobuf.RegisterCAHandlerFromEndpoint); err != nil {
+		log.Logger.Fatal(err)
+	}
 
-	legacyGRPCServer, err := createLegacyGRPCServer(cfg, grpcServer.caService)
+	legacyGRPCCAServer := server.NewLegacyGRPCCAServer(grpcCAServer)
 	if err != nil {
 		log.Logger.Fatal(err)
 	}
-	legacyGRPCServer.startUnixListener()
-
-	httpServer := createHTTPServer(context.Background(), httpServerEndpoint, grpcServer, legacyGRPCServer)
-	httpServer.startListener()
-
-	readHeaderTimeout := viper.GetDuration("read-header-timeout")
-	prom := http.Server{
-		Addr:              fmt.Sprintf(":%v", viper.GetString("metrics-port")),
-		Handler:           promhttp.Handler(),
-		ReadHeaderTimeout: readHeaderTimeout,
+	legacy.RegisterCAServer(d.Server, legacyGRPCCAServer)
+	if err := d.RegisterHandler(ctx, legacy.RegisterCAHandlerFromEndpoint); err != nil {
+		log.Logger.Fatal(err)
 	}
-	log.Logger.Error(prom.ListenAndServe())
+
+	if err := d.ListenAndServe(ctx); err != nil {
+		log.Logger.Fatal(err)
+
+	}
+
 }
 
 func checkServeCmdConfigFile() error {

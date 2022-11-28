@@ -32,6 +32,7 @@ import (
 	"github.com/sigstore/fulcio/pkg/ca"
 	"github.com/sigstore/fulcio/pkg/config"
 	gw "github.com/sigstore/fulcio/pkg/generated/protobuf"
+	"github.com/sigstore/fulcio/pkg/generated/protobuf/legacy"
 	gw_legacy "github.com/sigstore/fulcio/pkg/generated/protobuf/legacy"
 	"github.com/sigstore/fulcio/pkg/log"
 	"github.com/sigstore/fulcio/pkg/server"
@@ -47,6 +48,7 @@ type grpcServer struct {
 	*grpc.Server
 	grpcServerEndpoint string
 	caService          gw.CAServer
+	legacyServer       legacy.CAServer
 }
 
 func passFulcioConfigThruContext(cfg *config.FulcioConfig) grpc.UnaryServerInterceptor {
@@ -82,7 +84,7 @@ func createGRPCServer(cfg *config.FulcioConfig, ctClient *ctclient.LogClient, ba
 	gw.RegisterCAServer(myServer, grpcCAServer)
 
 	grpcServerEndpoint := fmt.Sprintf("%s:%s", viper.GetString("grpc-host"), viper.GetString("grpc-port"))
-	return &grpcServer{myServer, grpcServerEndpoint, grpcCAServer}, nil
+	return &grpcServer{myServer, grpcServerEndpoint, grpcCAServer, nil}, nil
 }
 
 func (g *grpcServer) setupPrometheus(reg *prometheus.Registry) {
@@ -152,7 +154,7 @@ func createLegacyGRPCServer(cfg *config.FulcioConfig, v2Server gw.CAServer) (*gr
 	// Register your gRPC service implementations.
 	gw_legacy.RegisterCAServer(myServer, legacyGRPCCAServer)
 
-	return &grpcServer{myServer, LegacyUnixDomainSocket, v2Server}, nil
+	return &grpcServer{myServer, LegacyUnixDomainSocket, v2Server, legacyGRPCCAServer}, nil
 }
 
 func panicRecoveryHandler(ctx context.Context, p interface{}) error {
