@@ -29,8 +29,13 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/goadesign/goa/grpc/middleware"
 	ctclient "github.com/google/certificate-transparency-go/client"
 	"github.com/google/certificate-transparency-go/jsonclient"
+	grpcmw "github.com/grpc-ecosystem/go-grpc-middleware"
+	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
+	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	certauth "github.com/sigstore/fulcio/pkg/ca"
 	"github.com/sigstore/fulcio/pkg/ca/ephemeralca"
@@ -248,11 +253,19 @@ func runServeCmd(cmd *cobra.Command, args []string) {
 	}
 
 	// logger, opts := log.SetupGRPCLogging()
+	logger, opts := log.SetupGRPCLogging()
 
 	d := duplex.New(
 		8080,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		runtime.WithMetadata(extractOIDCTokenFromAuthHeader),
+		grpc.UnaryInterceptor(grpcmw.ChainUnaryServer(
+			grpc_recovery.UnaryServerInterceptor(grpc_recovery.WithRecoveryHandlerContext(panicRecoveryHandler)), // recovers from per-transaction panics elegantly, so put it first
+			middleware.UnaryRequestID(middleware.UseXRequestIDMetadataOption(true), middleware.XRequestMetadataLimitOption(128)),
+			grpc_zap.UnaryServerInterceptor(logger, opts...),
+			passFulcioConfigThruContext(cfg),
+			grpc_prometheus.UnaryServerInterceptor,
+		)),
 	)
 
 	ctx := context.Background()
@@ -276,7 +289,6 @@ func runServeCmd(cmd *cobra.Command, args []string) {
 
 	if err := d.ListenAndServe(ctx); err != nil {
 		log.Logger.Fatal(err)
-
 	}
 
 }
