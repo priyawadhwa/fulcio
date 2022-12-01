@@ -22,12 +22,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"chainguard.dev/go-grpc-kit/pkg/duplex"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/goadesign/goa/grpc/middleware"
 	ctclient "github.com/google/certificate-transparency-go/client"
@@ -265,6 +267,7 @@ func runServeCmd(cmd *cobra.Command, args []string) {
 			passFulcioConfigThruContext(cfg),
 			grpc_prometheus.UnaryServerInterceptor,
 		)),
+		runtime.WithForwardResponseOption(httpResponseModifier),
 	)
 
 	ctx := context.Background()
@@ -290,6 +293,27 @@ func runServeCmd(cmd *cobra.Command, args []string) {
 		log.Logger.Fatal(err)
 	}
 
+}
+
+func httpResponseModifier(ctx context.Context, w http.ResponseWriter, p proto.Message) error {
+	md, ok := runtime.ServerMetadataFromContext(ctx)
+	if !ok {
+		return nil
+	}
+
+	// set http status code
+	if vals := md.HeaderMD.Get(server.HTTPResponseCodeMetadataKey); len(vals) > 0 {
+		code, err := strconv.Atoi(vals[0])
+		if err != nil {
+			return err
+		}
+		// delete the headers to not expose any grpc-metadata in http response
+		delete(md.HeaderMD, server.HTTPResponseCodeMetadataKey)
+		delete(w.Header(), "Grpc-Metadata-X-Http-Code")
+		w.WriteHeader(code)
+	}
+
+	return nil
 }
 
 func checkServeCmdConfigFile() error {
