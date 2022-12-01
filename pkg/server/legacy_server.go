@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strings"
 
 	fulciogrpc "github.com/sigstore/fulcio/pkg/generated/protobuf"
@@ -103,6 +104,7 @@ func (l *legacyGRPCCAServer) CreateSigningCertificate(ctx context.Context, reque
 	}
 
 	// we need to return a HTTP 201 Created response code to be backward compliant
+	fmt.Println("~~~~~~~~~ Legacy server setting header to 201")
 	if err = grpc.SetHeader(ctx, metadata.Pairs(HTTPResponseCodeMetadataKey, "201")); err != nil {
 		return nil, err
 	}
