@@ -252,7 +252,6 @@ func runServeCmd(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// logger, opts := log.SetupGRPCLogging()
 	logger, opts := log.SetupGRPCLogging()
 
 	d := duplex.New(
