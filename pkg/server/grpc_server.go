@@ -126,6 +126,12 @@ func (g *grpcCAServer) CreateSigningCertificate(ctx context.Context, request *fu
 			return nil, handleFulcioGRPCError(ctx, codes.InvalidArgument, err, insecurePublicKey)
 		}
 
+		fmt.Println("checking proof of possession signature")
+		fmt.Printf("%v\n", string(pubKeyContent))
+		fmt.Println("proof of possesion")
+		fmt.Printf("%v\n", string(proofOfPossession))
+		fmt.Printf("%v\n", string(principal.Name(ctx)))
+
 		// Check proof of possession signature
 		if err := challenges.CheckSignature(publicKey, proofOfPossession, principal.Name(ctx)); err != nil {
 			return nil, handleFulcioGRPCError(ctx, codes.InvalidArgument, err, invalidSignature)
